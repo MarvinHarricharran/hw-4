@@ -1,0 +1,115 @@
+Group Names: Alicia Persad, Flamur Kukaj, Abdullah Al-Iman, Marvin Harricharran.
+
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(class)  # For the knn function
+library(caret)  # In case you're using caret for k-NN
+
+# Set working directory
+setwd("/Library/Mobile Documents/com~apple~CloudDocs/B2000/")
+getwd()
+
+# Load data
+load("~/Library/Mobile Documents/com~apple~CloudDocs/B2000/Household_Pulse_data_ph4c2.RData")
+
+# Create 'Age' variable
+Household_Pulse_data$Age <- 2024 - Household_Pulse_data$TBIRTH_YEAR
+
+# Recoding the education variable
+Household_Pulse_data$Educ_years <- fct_recode(Household_Pulse_data$EEDUC,
+                                              "8" = "less than hs",
+                                              "11" = "some hs",
+                                              "12" = "HS diploma",
+                                              "13" = "some coll",
+                                              "14" = "assoc deg",
+                                              "16" = "bach deg",
+                                              "18" = "adv deg")
+
+Household_Pulse_data$RRACE <- as.numeric(Household_Pulse_data$RRACE)
+
+
+xtabs(formula = ~HADCOVIDRV + LONGCOVID, data = Household_Pulse_data)
+
+
+dat_hadcovid <- Household_Pulse_data %>%
+  filter(HADCOVIDRV == "yes tested + or doc told had Covid")
+
+norm_varb <- function(X_in) {
+  (X_in - min(X_in, na.rm = TRUE)) / (max(X_in, na.rm = TRUE) - min(X_in, na.rm = TRUE))
+}
+
+data_use_prelim <- data.frame(norm_varb(dat_hadcovid$Age),
+                              norm_varb(dat_hadcovid$Educ_years))
+
+good_obs_data_use <- complete.cases(data_use_prelim, dat_hadcovid$LONGCOVID)
+dat_use <- subset(data_use_prelim, good_obs_data_use)
+y_use <- subset(dat_hadcovid$LONGCOVID, good_obs_data_use)
+
+
+set.seed(12345)
+NN_obs <- sum(good_obs_data_use == 1)
+select1 <- (runif(NN_obs) < 0.8)
+train_data <- subset(dat_use, select1)
+test_data <- subset(dat_use, !select1)
+cl_data <- y_use[select1]
+true_data <- y_use[!select1]
+
+summary(cl_data)
+summary(train_data)
+
+# k-NN loop with k values from 1 to 9
+library(class)
+
+for (indx in seq(1, 9, by = 2)) {
+  pred_y <- knn(train_data, test_data, cl_data, k = indx)
+  num_correct_labels <- sum(pred_y == true_data)
+  correct_rate <- num_correct_labels / length(true_data)
+  print(c(indx, correct_rate))
+}
+
+# Plot: Age vs Education years colored by Long Covid Status
+ggplot(dat_hadcovid, aes(x = Age, y = Educ_years, colour = LONGCOVID)) +
+  geom_point(position = "dodge") +
+  labs(title = "Age vs Education years colored by Long Covid Status") +
+  theme_minimal()
+
+# Plot: Long Covid Status by Education Level
+ggplot(dat_hadcovid, aes(x = LONGCOVID, fill = EEDUC)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Long Covid Status by Education Level") +
+  theme_minimal()
+
+# Plot: Race vs Income colored by Long Covid Status
+ggplot(dat_hadcovid, aes(x = RRACE, y = INCOME, colour = LONGCOVID)) +
+  geom_point(position = "dodge") +
+  labs(title = "Race vs Income colored by Long Covid Status") +
+  theme_minimal()
+
+
+
+# k-NN results storage and plotting
+results <- data.frame(k = integer(), accuracy = numeric())
+
+set.seed(12345)
+NN_obs <- sum(good_obs_data_use == 1)
+select1 <- (runif(NN_obs) < 0.8)
+train_data <- subset(dat_use,select1)
+test_data <- subset(dat_use,(!select1))
+cl_data <- y_use[select1]
+true_data <- y_use[!select1]
+
+
+for (indx in seq(1, 9, by = 2)) {
+  pred_y <- knn(train_data, test_data, cl_data, k = indx)
+  num_correct_labels <- sum(pred_y == true_data)
+  correct_rate <- num_correct_labels / length(true_data)
+  
+  results <- rbind(results, data.frame(k = indx, accuracy = correct_rate))
+}
+
+ggplot(results, aes(x = k, y = accuracy)) + 
+  geom_line() + 
+  geom_point() + 
+  labs(title = "Accuracy vs. k in k-NN", x = "k (Number of Neighbors)", y = "Accuracy")
